@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Learning - Previsão de Valores</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .prediction-card {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .model-option {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+        .model-option:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .model-option.selected {
+            border-color: #007bff;
+            background-color: #e7f3ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>Machine Learning - Previsão de Valores</h1>
+                    <div>
+                        <a href="/" class="btn btn-outline-primary me-2">Voltar</a>
+                        <a href="/" class="btn btn-outline-secondary">Análise</a>
+                    </div>
+                </div>
+
+                <!-- Mensagens Flash -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="row">
+                        <!-- Coluna de Treinamento -->
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Treinar Modelo</h5>
+                                    <p class="text-muted">Escolha um arquivo CSV e um algoritmo para treinar o modelo.</p>
+
+                                    <!-- Upload do arquivo -->
+                                    <div class="mb-3">
+                                        <label class="form-label">Arquivo CSV para Treinamento</label>
+                                        <input class="form-control" type="file" name="mlFile" accept=".csv" required>
+                                        <div class="form-text">
+                                            O arquivo deve conter as colunas: modelo, motorizacao, tipo_cambio, combustivel, categoria, ano_fabricacao, ano_modelo, potencia_cv, consumo_km_l, valor_carro
+                                        </div>
+                                    </div>
+
+                                    <!-- Seleção do Modelo -->
+                                    <div class="mb-3">
+                                        <label class="form-label">Selecione o Modelo:</label>
+                                        
+                                        <!-- Regressão Linear -->
+                                        <div class="model-option {% if not resultados_treinamento or nome_modelo.startswith('Regressão Linear') %}selected{% endif %}" 
+                                             onclick="document.getElementById('model1').checked = true; updateParams()">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="modelo_type" id="model1" value="1" {% if not resultados_treinamento or request.form.get('modelo_type', '1') == '1' %}checked{% endif %}>
+                                                <label class="form-check-label fw-bold" for="model1">
+                                                    Regressão Linear
+                                                </label>
+                                                <p class="text-muted mb-0 small">Modelo linear simples para relações lineares</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- Árvore de Decisão -->
+                                        <div class="model-option {% if resultados_treinamento and request.form.get('modelo_type') == '2' %}selected{% endif %}" 
+                                             onclick="document.getElementById('model2').checked = true; updateParams()">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="modelo_type" id="model2" value="2" {% if request.form.get('modelo_type') == '2' %}checked{% endif %}>
+                                                <label class="form-check-label fw-bold" for="model2">
+                                                    Árvore de Decisão
+                                                </label>
+                                                <p class="text-muted mb-0 small">Modelo baseado em divisões hierárquicas</p>
+                                            </div>
+                                            <div class="mt-2" id="params2" style="display: none;">
+                                                <label class="form-label small">Profundidade máxima:</label>
+                                                <input type="number" class="form-control form-control-sm" name="max_depth" value="{{ request.form.get('max_depth', '5') }}" min="1" max="20">
+                                            </div>
+                                        </div>
+
+                                        <!-- Random Forest -->
+                                        <div class="model-option {% if resultados_treinamento and request.form.get('modelo_type') == '3' %}selected{% endif %}" 
+                                             onclick="document.getElementById('model3').checked = true; updateParams()">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="modelo_type" id="model3" value="3" {% if request.form.get('modelo_type') == '3' %}checked{% endif %}>
+                                                <label class="form-check-label fw-bold" for="model3">
+                                                    Random Forest
+                                                </label>
+                                                <p class="text-muted mb-0 small">Ensemble de múltiplas árvores de decisão</p>
+                                            </div>
+                                            <div class="mt-2" id="params3" style="display: none;">
+                                                <label class="form-label small">Número de árvores:</label>
+                                                <input type="number" class="form-control form-control-sm" name="n_estimators" value="{{ request.form.get('n_estimators', '100') }}" min="10" max="1000">
+                                            </div>
+                                        </div>
+
+                                        <!-- KNN -->
+                                        <div class="model-option {% if resultados_treinamento and request.form.get('modelo_type') == '4' %}selected{% endif %}" 
+                                             onclick="document.getElementById('model4').checked = true; updateParams()">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="modelo_type" id="model4" value="4" {% if request.form.get('modelo_type') == '4' %}checked{% endif %}>
+                                                <label class="form-check-label fw-bold" for="model4">
+                                                    K-Nearest Neighbors
+                                                </label>
+                                                <p class="text-muted mb-0 small">Baseado na similaridade com exemplos próximos</p>
+                                            </div>
+                                            <div class="mt-2" id="params4" style="display: none;">
+                                                <label class="form-label small">Número de vizinhos:</label>
+                                                <input type="number" class="form-control form-control-sm" name="n_neighbors" value="{{ request.form.get('n_neighbors', '5') }}" min="1" max="50">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary w-100" name="action" value="treinar">
+                                        Treinar Modelo
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Resultados do Treinamento -->
+                            {% if resultados_treinamento %}
+                            <div class="card mt-4">
+                                <div class="card-body">
+                                    <h5 class="card-title">Resultados do Treinamento</h5>
+                                    <div class="stats-card">
+                                        <h4>{{ nome_modelo }}</h4>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="card">
+                                                <div class="card-body text-center">
+                                                    <h5 class="card-title">RMSE</h5>
+                                                    <h3 class="text-primary">{{ "%.2f"|format(rmse) }}</h3>
+                                                    <small class="text-muted">Raiz do Erro Quadrático Médio</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="card">
+                                                <div class="card-body text-center">
+                                                    <h5 class="card-title">R² Score</h5>
+                                                    <h3 class="text-success">{{ "%.3f"|format(r2) }}</h3>
+                                                    <small class="text-muted">Coeficiente de Determinação</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% if chart_base64 %}
+                                    <div class="mt-3">
+                                        <h6>Gráfico de Desempenho:</h6>
+                                        <img src="data:image/png;base64,{{ chart_base64 }}" class="img-fluid" alt="Desempenho do Modelo">
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Coluna de Previsão -->
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Fazer Previsão</h5>
+                                    <p class="text-muted">Preencha os dados do veículo para estimar seu valor.</p>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Modelo</label>
+                                                <input type="text" class="form-control" name="modelo" required value="{{ request.form.get('modelo', 'Onix') }}">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Motorização</label>
+                                                <input type="text" class="form-control" name="motorizacao" required value="{{ request.form.get('motorizacao', '1.0') }}">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Câmbio</label>
+                                                <select class="form-select" name="tipo_cambio" required>
+                                                    <option value="manual" {% if request.form.get('tipo_cambio') == 'manual' %}selected{% endif %}>Manual</option>
+                                                    <option value="automatico" {% if request.form.get('tipo_cambio') == 'automatico' %}selected{% endif %}>Automático</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Combustível</label>
+                                                <select class="form-select" name="combustivel" required>
+                                                    <option value="flex" {% if request.form.get('combustivel') == 'flex' %}selected{% endif %}>Flex</option>
+                                                    <option value="diesel" {% if request.form.get('combustivel') == 'diesel' %}selected{% endif %}>Diesel</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Categoria</label>
+                                                <select class="form-select" name="categoria" required>
+                                                    <option value="hatch" {% if request.form.get('categoria') == 'hatch' %}selected{% endif %}>Hatch</option>
+                                                    <option value="sedan" {% if request.form.get('categoria') == 'sedan' %}selected{% endif %}>Sedan</option>
+                                                    <option value="SUV" {% if request.form.get('categoria') == 'SUV' %}selected{% endif %}>SUV</option>
+                                                    <option value="picape" {% if request.form.get('categoria') == 'picape' %}selected{% endif %}>Picape</option>
+                                                    <option value="minivan" {% if request.form.get('categoria') == 'minivan' %}selected{% endif %}>Minivan</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Ano Fabricação</label>
+                                                <input type="number" class="form-control" name="ano_fabricacao" required value="{{ request.form.get('ano_fabricacao', '2024') }}" min="2015" max="2025">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Ano Modelo</label>
+                                                <input type="number" class="form-control" name="ano_modelo" required value="{{ request.form.get('ano_modelo', '2024') }}" min="2015" max="2025">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Potência (cv)</label>
+                                                <input type="number" class="form-control" name="potencia_cv" required value="{{ request.form.get('potencia_cv', '82') }}" min="50" max="300" step="1">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Consumo (km/l)</label>
+                                        <input type="number" class="form-control" name="consumo_km_l" required value="{{ request.form.get('consumo_km_l', '13.5') }}" min="5" max="20" step="0.1">
+                                    </div>
+
+                                    <button type="submit" class="btn btn-success w-100" name="action" value="prever">
+                                        Estimar Valor
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Resultados da Previsão -->
+                            {% if previsao_realizada %}
+                            <div class="card mt-4">
+                                <div class="card-body">
+                                    <h5 class="card-title">Resultado da Previsão</h5>
+                                    <div class="prediction-card">
+                                        <h4>Valor Estimado</h4>
+                                        <h2>R$ {{ "%.2f"|format(valor_estimado) }}</h2>
+                                    </div>
+                                    <div class="row mt-3">
+                                        <div class="col-md-6">
+                                            <div class="card">
+                                                <div class="card-body text-center">
+                                                    <h5 class="card-title">📦 Vendas Estimadas</h5>
+                                                    <h4 class="text-info">{{ quantidade_vendas }}</h4>
+                                                    <small class="text-muted">unidades</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="card">
+                                                <div class="card-body text-center">
+                                                    <h5 class="card-title">💵 Faturamento Total</h5>
+                                                    <h4 class="text-success">R$ {{ valor_total_vendas }}</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <h6>Dados informados:</h6>
+                                        <div class="small">
+                                            <strong>Modelo:</strong> {{ dados_previsao.modelo }} | 
+                                            <strong>Motorização:</strong> {{ dados_previsao.motorizacao }} | 
+                                            <strong>Câmbio:</strong> {{ dados_previsao.tipo_cambio }}<br>
+                                            <strong>Combustível:</strong> {{ dados_previsao.combustivel }} | 
+                                            <strong>Categoria:</strong> {{ dados_previsao.categoria }} | 
+                                            <strong>Ano:</strong> {{ dados_previsao.ano_fabricacao }}/{{ dados_previsao.ano_modelo }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function updateParams() {
+            // Ocultar todos os parâmetros
+            document.getElementById('params2').style.display = 'none';
+            document.getElementById('params3').style.display = 'none';
+            document.getElementById('params4').style.display = 'none';
+            
+            // Mostrar parâmetros do modelo selecionado
+            const selectedModel = document.querySelector('input[name="modelo_type"]:checked');
+            if (selectedModel) {
+                if (selectedModel.value === '2') {
+                    document.getElementById('params2').style.display = 'block';
+                } else if (selectedModel.value === '3') {
+                    document.getElementById('params3').style.display = 'block';
+                } else if (selectedModel.value === '4') {
+                    document.getElementById('params4').style.display = 'block';
+                }
+                
+                // Atualizar seleção visual
+                document.querySelectorAll('.model-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                selectedModel.closest('.model-option').classList.add('selected');
+            }
+        }
+        
+        // Inicializar
+        document.addEventListener('DOMContentLoaded', function() {
+            updateParams();
+        });
+    </script>
+</body>
+</html>
